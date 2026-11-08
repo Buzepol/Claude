@@ -1,0 +1,184 @@
+# Plan: DupeScout – hdd-vergelijker voor dubbele bestanden
+
+Desktop-app (Python + Qt) om één of meer schijven te scannen, dubbele bestanden te vinden, te bekijken, veilig op te ruimen (quarantaine) en bestanden te ordenen in nieuwe mappen.
+
+## 1. Gekozen uitgangspunten
+
+| Onderwerp | Keuze |
+|---|---|
+| Platform | Desktop-app, Python 3.11+ met **PySide6 (Qt)**. Windows/macOS/Linux. |
+| Detectie | Exact (hash), gelijkende foto's, naam + grootte, gelijkende audio/video |
+| Verwijderen | **Verplaatsen naar quarantainemap**, pas later definitief wissen |
+| Ordenen | Op datum (jaar/maand) + eigen regels, **altijd eerst voorbeeldweergave** |
+
+Principe: *de scan is altijd read-only; elke wijziging is eerst een voorstel, dan een bevestiging, dan een omkeerbare actie met logboek.*
+
+## 2. Architectuur
+
+```
+dupescout/
+  core/
+    scanner.py        # bestanden doorlopen, metadata verzamelen
+    hashing.py        # gedeeltelijke + volledige hash
+    detectors/
+      exact.py        # grootte -> partial hash -> volledige hash
+      namesize.py     # naam (genormaliseerd) + grootte
+      image.py        # perceptuele hash (pHash/dHash)
+      media.py        # audio/video-fingerprint
+    cache.py          # SQLite-cache
+    quarantine.py     # verplaatsen, manifest, herstellen, opruimen
+    organizer/
+      rules.py        # regel-engine
+      metadata.py     # EXIF/mediadatum lezen
+      planner.py      # voorstel (dry-run) opbouwen
+      executor.py     # uitvoeren met journal + undo
+    drives.py         # schijf-identificatie (UUID/serienummer)
+  ui/                 # PySide6: vensters, modellen, voorbeeldpanelen
+  tests/
+```
+
+- `core` bevat geen UI-code, zodat het los te testen is en later ook als CLI gebruikt kan worden.
+- Zwaar werk draait in worker-threads/processen (QThreadPool / multiprocessing) met voortgang, pauzeren en annuleren.
+
+### Gebruikte bibliotheken
+- `PySide6` (UI), `xxhash`/`blake3` (snelle hash) + `hashlib.sha256` (verificatie)
+- `Pillow`, `imagehash`, `pillow-heif` (foto's incl. HEIC), `exifread`/`piexif` (EXIF)
+- `rapidfuzz` (naam-vergelijking)
+- `ffmpeg`/`ffprobe` + `chromaprint (fpcalc)` voor audio/video (externe tools, optioneel gedetecteerd)
+- `sqlite3` (cache en journals), `PyYAML` (regelbestanden), `pytest`, `PyInstaller` (verpakken)
+
+## 3. Detectie
+
+### 3.1 Exact identiek (standaard, 100% betrouwbaar)
+Opeenvolgende filters zodat zo min mogelijk gelezen wordt:
+1. Groepeer op **bestandsgrootte** (unieke groottes vallen af).
+2. **Gedeeltelijke hash** (eerste + laatste 64 KB).
+3. **Volledige hash** alleen voor overgebleven kandidaten.
+4. Vóór elke verwijdering: byte-voor-byte controle.
+
+Bijzonderheden: lege bestanden apart behandelen; symlinks niet volgen; hardlinks (zelfde inode) niet als dubbel tellen; minimale/maximale grootte als filter.
+
+### 3.2 Naam + grootte
+Genormaliseerde naam (zonder " (1)", "- kopie", hoofdletters) + gelijke grootte. Snel maar onzeker: in de UI gelabeld als *"mogelijk dubbel"* en nooit automatisch geselecteerd.
+
+### 3.3 Gelijkende foto's
+- pHash + dHash per afbeelding, ook voor HEIC/RAW-previews.
+- Zoeken met **BK-tree** of LSH i.p.v. alles-met-alles; instelbare drempel (Hamming-afstand) met schuifregelaar.
+- Groep toont resolutie, bestandsgrootte, datum; voorstel om de hoogste kwaliteit te behouden.
+
+### 3.4 Gelijkende audio/video
+- Audio: Chromaprint-fingerprint + duur (±2 s) → vergelijking.
+- Video: duur + frames op vaste posities (bijv. 10 punten) → pHash-reeks, vergelijken met tolerantie.
+- Alleen actief als ffmpeg/fpcalc gevonden wordt; anders duidelijke melding.
+- Dit is het zwaarste onderdeel en komt daarom in een latere mijlpaal.
+
+### 3.5 Cache
+SQLite-tabel met sleutel `(schijf_id, relatief pad, grootte, mtime)` → hashes. Een tweede scan van een grote schijf is hierdoor veel sneller en onderbroken scans kunnen hervat worden.
+
+## 4. Meerdere schijven vergelijken
+- Gebruiker voegt **bronnen** toe (mappen/schijven) en kan per bron een rol geven: *"behouden"* (referentie) of *"opruimen"*.
+- Schijven worden herkend op **UUID/volumeserienummer**, niet op stationsletter, zodat de cache blijft kloppen als een externe hdd een andere letter krijgt.
+- Vergelijkingsmodi: binnen één schijf, tussen schijven, "alles in A dat ook in B staat".
+- Uitsluitingen: mappen, extensies, systeem- en verborgen bestanden.
+- Trage hdd's: sequentieel lezen per schijf (niet parallel op dezelfde schijf), parallel over verschillende schijven.
+
+## 5. Bekijken (UI)
+
+Tabs/vensters:
+1. **Bronnen & instellingen** – mappen kiezen, detectiemodi, drempels, uitsluitingen, start/pauze/stop met voortgang.
+2. **Resultaten** – lijst/boom van duplicaatgroepen: sorteren op bespaarde ruimte, aantal, type; filteren op type, schijf, map.
+3. **Voorbeeld/vergelijken** – naast elkaar: afbeelding (zoom, verschil-overlay), tekst/PDF-voorbeeld, audio/video afspelen, metadata-tabel.
+4. **Selectie & acties** – slimme selectieregels (zie 6.1), samenvatting "x bestanden, y GB vrijgemaakt", knop *Naar quarantaine*.
+5. **Ordenen** – zie sectie 7.
+6. **Quarantaine & logboek** – overzicht, herstellen, definitief wissen, geschiedenis van acties.
+
+## 6. Veilig verwijderen
+
+### 6.1 Selecteren
+Handmatig of via regels: behoud oudste / nieuwste, kortste pad, voorkeursschijf, voorkeursmap, hoogste resolutie. Regels zijn combineerbaar en altijd zichtbaar vóór uitvoeren.
+
+### 6.2 Quarantaine
+- Verplaatsen naar `.dupescout-quarantine/<datum>/` **op dezelfde schijf** (instant rename, werkt ook zonder prullenbak op externe hdd's).
+- Per batch een `manifest.json`: oorspronkelijk pad, hash, grootte, tijdstip, reden, behouden kopie.
+- **Herstellen** per bestand of batch.
+- **Opruimen**: handmatig of automatisch na N dagen; pas dán definitief gewist.
+
+### 6.3 Vangrails
+- Nooit alle kopieën in een groep tegelijk verwijderen (minimaal 1 blijft altijd staan, afgedwongen in `core`, niet alleen in de UI).
+- Herverificatie vlak voor verplaatsing (bestand bestaat nog, grootte/hash klopt).
+- Dry-run/overzicht met bevestiging; extra waarschuwing bij grote aantallen of systeemmappen.
+- Read-only of niet-schrijfbare schijf: alleen rapporteren, geen acties.
+- Volledig logboek (tekst + SQLite) van elke actie.
+
+## 7. Extra functie: ordenen in nieuwe mappen
+
+### 7.1 Datum-ordening
+Doelsjabloon bijv. `{jaar}/{maand:02d}-{maandnaam}/{bestandsnaam}`.
+Datumbron in volgorde: EXIF-opnamedatum → media-metadata → bestandsnaam-patroon (bijv. `IMG_20230415`) → wijzigingsdatum. Bron per bestand zichtbaar.
+
+### 7.2 Eigen regels
+Regels in UI én als YAML-bestand (deelbaar/herbruikbaar), bijvoorbeeld:
+
+```yaml
+- naam: Foto's per jaar/maand
+  als: { extensie: [jpg, jpeg, heic, png], kleiner_dan: 50MB }
+  doel: "Foto's/{jaar}/{maand:02d}"
+- naam: Documenten per type
+  als: { extensie: [pdf, docx, xlsx] }
+  doel: "Documenten/{extensie}"
+- naam: Screenshots
+  als: { naam_regex: "^Screenshot" }
+  doel: "Screenshots/{jaar}"
+```
+
+Voorwaarden: extensie/MIME, naam (regex), grootte, datum, bronmap, schijf. Eerste passende regel wint; volgorde aanpasbaar; terugvalregel voor "overig".
+
+### 7.3 Voorbeeldweergave (verplicht)
+- Planner bouwt een **voorstel** zonder iets aan te raken: boomweergave *voor → na*, aantallen per doelmap, conflicten en waarschuwingen.
+- Gebruiker kan items uitsluiten of de doelmap aanpassen.
+- Uitvoeren pas na expliciete bevestiging.
+
+### 7.4 Uitvoeren
+- Zelfde schijf: verplaatsen (rename). Andere schijf: kopiëren → hash verifiëren → pas dan bron verwijderen/naar quarantaine.
+- Naamconflicten: automatisch nummeren, overslaan of vragen; identieke inhoud wordt gemeld als duplicaat.
+- **Journal** van elke verplaatsing in SQLite → **Ongedaan maken** voor de hele batch.
+- Optie "kopiëren i.p.v. verplaatsen".
+
+## 8. Mijlpalen
+
+| # | Mijlpaal | Resultaat |
+|---|---|---|
+| 1 | Skelet + scanner + cache + exacte detectie | Werkende CLI die dubbelen rapporteert |
+| 2 | Qt-UI: bronnen, resultaten, voortgang | Dubbelen bekijken in de app |
+| 3 | Vergelijkpaneel + selectieregels | Foto/tekst naast elkaar, slimme selectie |
+| 4 | Quarantaine + herstel + logboek | Veilig opruimen |
+| 5 | Ordenen: regel-engine, voorbeeld, uitvoeren, undo | Datum- en eigen-regel-ordening |
+| 6 | Gelijkende foto's | pHash + drempelregelaar |
+| 7 | Gelijkende audio/video | ffmpeg/chromaprint-integratie |
+| 8 | Afwerking | Instellingen, verpakken (PyInstaller), documentatie |
+
+Mijlpalen 1–5 geven al een volledig bruikbare tool; 6–7 zijn uitbreidingen.
+
+## 9. Teststrategie
+- Unit-tests op `core` met gegenereerde testmappen (identieke, bijna-identieke, hardlinks, lege bestanden, Unicode-/lange paden).
+- Tests voor vangrails: nooit alle kopieën weg, herstel brengt exact originele staat terug.
+- Property-test: scan → quarantaine → herstel = identieke boomstructuur en hashes.
+- Prestatietest op ~100.000 bestanden; geheugen blijft constant (streaming hash).
+- UI-smoketests met `pytest-qt`; handmatige test met een echte externe hdd.
+
+## 10. Risico's
+
+| Risico | Aanpak |
+|---|---|
+| Per ongeluk waardevolle data verwijderen | Quarantaine, vangrails in core, byte-verificatie, dry-run |
+| Trage hdd / grote schijven | Filtercascade, cache, sequentieel lezen, hervatbare scans |
+| Valse positieven bij foto's/video | Drempels instelbaar, nooit auto-selecteren, visuele vergelijking |
+| Wisselende stationsletters | Schijf-UUID i.p.v. pad |
+| Quarantaine vult de schijf | Zelfde schijf = geen extra ruimte bij verplaatsen; overzicht + auto-opruimen |
+| ffmpeg ontbreekt | Optionele detectie, duidelijke melding, rest blijft werken |
+
+## 11. Openstaande punten (graag jouw keuze)
+1. Welk besturingssysteem gebruik je (Windows/macOS/Linux)? Bepaalt hoe we de installer verpakken.
+2. Welk type bestanden is de hoofdmoot (foto's, video, documenten)? Dan prioriteren we die detectie eerst.
+3. Ongeveer hoe groot zijn de schijven (aantal TB / bestanden)? Bepaalt hoe agressief we moeten optimaliseren.
+4. Automatisch quarantaine opruimen na een aantal dagen, of altijd handmatig?
