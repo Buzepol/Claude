@@ -10,6 +10,7 @@ Desktop-app (Python + Qt) om één of meer schijven te scannen, dubbele bestande
 | Detectie | Exact (hash), gelijkende foto's, naam + grootte, gelijkende audio/video |
 | Verwijderen | **Verplaatsen naar quarantainemap**, pas later definitief wissen |
 | Ordenen | Op datum (jaar/maand) + eigen regels, **altijd eerst voorbeeldweergave** |
+| Map-vergelijk | **Twee mappen (A en B) vergelijken**: duplicaten tussen A en B + alleen-in-A / alleen-in-B; dubbelen in B naar quarantaine |
 
 Principe: *de scan is altijd read-only; elke wijziging is eerst een voorstel, dan een bevestiging, dan een omkeerbare actie met logboek.*
 
@@ -22,6 +23,7 @@ dupescout/
     hashing.py        # gedeeltelijke + volledige hash
     detectors/
       exact.py        # grootte -> partial hash -> volledige hash
+      compare.py      # 2-mappen-vergelijk (A vs B)
       namesize.py     # naam (genormaliseerd) + grootte
       image.py        # perceptuele hash (pHash/dHash)
       media.py        # audio/video-fingerprint
@@ -82,15 +84,34 @@ SQLite-tabel met sleutel `(schijf_id, relatief pad, grootte, mtime)` → hashes.
 - Uitsluitingen: mappen, extensies, systeem- en verborgen bestanden.
 - Trage hdd's: sequentieel lezen per schijf (niet parallel op dezelfde schijf), parallel over verschillende schijven.
 
+## 4b. Twee mappen vergelijken (A ↔ B)
+
+Aparte modus naast "alles in één pool zoeken": de gebruiker kiest **map A (referentie)** en **map B (te controleren)**, op dezelfde of op verschillende schijven.
+
+**Uitkomst, in vier categorieën** (op inhoud, via dezelfde hash-cascade als 3.1):
+1. **In beide mappen (duplicaten)** – zelfde inhoud, ook als naam of submap verschilt. Per rij: pad in A, pad in B, grootte, datum.
+2. **Alleen in A** – ontbreekt in B.
+3. **Alleen in B** – ontbreekt in A.
+4. *(Informatief)* **Zelfde pad, andere inhoud** wordt als aanduiding bij duplicaten-/alleen-in-lijsten gemarkeerd, maar is geen aparte actie in de eerste versie.
+
+**Opties:** vergelijken op inhoud (standaard) of ook op naam+grootte (snel); submappen meenemen ja/nee; optioneel gelijkende foto's (3.3) meenemen in de vergelijking.
+
+**Acties:** A is de referentie. De duplicaten in B worden via de bestaande quarantaine (sectie 6) opgeruimd: voorbeeldweergave, herverificatie, manifest, herstellen. Bestanden in A worden in deze modus nooit aangeraakt. De lijsten *alleen in A* / *alleen in B* zijn bekijk- en exporteerbaar (CSV/tekst).
+
+**UI:** een tab "Mappen vergelijken" met twee mapkiezers, een samenvatting ("x gelijk, y alleen in A, z alleen in B, w GB terug te winnen"), drie filterbare lijsten en het bestaande vergelijkpaneel voor de voorbeeldweergave.
+
+**Vangrails:** A en B mogen niet dezelfde of geneste map zijn (waarschuwing); hardlinks/dezelfde inode tussen A en B tellen niet als duplicaat; selectie in B kan nooit alle kopieën wissen omdat A altijd behouden blijft.
+
 ## 5. Bekijken (UI)
 
 Tabs/vensters:
 1. **Bronnen & instellingen** – mappen kiezen, detectiemodi, drempels, uitsluitingen, start/pauze/stop met voortgang.
-2. **Resultaten** – lijst/boom van duplicaatgroepen: sorteren op bespaarde ruimte, aantal, type; filteren op type, schijf, map.
-3. **Voorbeeld/vergelijken** – naast elkaar: afbeelding (zoom, verschil-overlay), tekst/PDF-voorbeeld, audio/video afspelen, metadata-tabel.
-4. **Selectie & acties** – slimme selectieregels (zie 6.1), samenvatting "x bestanden, y GB vrijgemaakt", knop *Naar quarantaine*.
-5. **Ordenen** – zie sectie 7.
-6. **Quarantaine & logboek** – overzicht, herstellen, definitief wissen, geschiedenis van acties.
+2. **Mappen vergelijken** – zie 4b.
+3. **Resultaten** – lijst/boom van duplicaatgroepen: sorteren op bespaarde ruimte, aantal, type; filteren op type, schijf, map.
+4. **Voorbeeld/vergelijken** – naast elkaar: afbeelding (zoom, verschil-overlay), tekst/PDF-voorbeeld, audio/video afspelen, metadata-tabel.
+5. **Selectie & acties** – slimme selectieregels (zie 6.1), samenvatting "x bestanden, y GB vrijgemaakt", knop *Naar quarantaine*.
+6. **Ordenen** – zie sectie 7.
+7. **Quarantaine & logboek** – overzicht, herstellen, definitief wissen, geschiedenis van acties.
 
 ## 6. Veilig verwijderen
 
@@ -152,16 +173,18 @@ Voorwaarden: extensie/MIME, naam (regex), grootte, datum, bronmap, schijf. Eerst
 | 2 | Qt-UI: bronnen, resultaten, voortgang | Dubbelen bekijken in de app |
 | 3 | Vergelijkpaneel + selectieregels | Foto/tekst naast elkaar, slimme selectie |
 | 4 | Quarantaine + herstel + logboek | Veilig opruimen |
-| 5 | Ordenen: regel-engine, voorbeeld, uitvoeren, undo | Datum- en eigen-regel-ordening |
-| 6 | Gelijkende foto's | pHash + drempelregelaar |
-| 7 | Gelijkende audio/video | ffmpeg/chromaprint-integratie |
-| 8 | Afwerking | Instellingen, verpakken (PyInstaller), documentatie |
+| 5 | **Twee mappen vergelijken (A↔B)** | Duplicaten / alleen-in-A / alleen-in-B, dubbelen in B naar quarantaine |
+| 6 | Ordenen: regel-engine, voorbeeld, uitvoeren, undo | Datum- en eigen-regel-ordening |
+| 7 | Gelijkende foto's | pHash + drempelregelaar |
+| 8 | Gelijkende audio/video | ffmpeg/chromaprint-integratie |
+| 9 | Afwerking | Instellingen, verpakken (PyInstaller), documentatie |
 
-Mijlpalen 1–5 geven al een volledig bruikbare tool; 6–7 zijn uitbreidingen.
+Mijlpalen 1–6 geven al een volledig bruikbare tool; 7–8 zijn uitbreidingen.
 
 ## 9. Teststrategie
 - Unit-tests op `core` met gegenereerde testmappen (identieke, bijna-identieke, hardlinks, lege bestanden, Unicode-/lange paden).
 - Tests voor vangrails: nooit alle kopieën weg, herstel brengt exact originele staat terug.
+- Tests voor map-vergelijk: A/B met overlap, hernoemde bestanden, geneste mappen en hardlinks; B-acties laten A onaangeroerd.
 - Property-test: scan → quarantaine → herstel = identieke boomstructuur en hashes.
 - Prestatietest op ~100.000 bestanden; geheugen blijft constant (streaming hash).
 - UI-smoketests met `pytest-qt`; handmatige test met een echte externe hdd.
