@@ -15,12 +15,11 @@ from .core import quarantine as q
 from .core.compare import compare_folders
 from .core.db import Cache
 from .core.engine import DetectOptions, run_detection
-from .core.imageio import is_image, read_meta
 from .core.models import human_size
 from .core.organizer import executor, rules as rules_mod
 from .core.organizer.planner import build_plan
 from .core.scanner import ScanOptions, scan_roots
-from .core.selection import STRATEGIES, auto_select
+from .core.selection import STRATEGIES, auto_select_all, build_requests, resolution_lookup
 
 KINDS = {"exact": "exact", "foto": "similar_image", "naam": "name_size", "media": "similar_media"}
 
@@ -39,21 +38,6 @@ def _end_progress() -> None:
 
 def _scan_opts(args: argparse.Namespace) -> ScanOptions:
     return ScanOptions(excludes=args.exclude or [], min_size=args.min_size)
-
-
-def _resolution(cache: Cache):
-    def res(f):
-        got = cache.lookup(f)
-        if "width" in got:
-            return got["width"] * got["height"]
-        if is_image(f.ext):
-            try:
-                m = read_meta(f.path)
-                return m.width * m.height
-            except Exception:
-                return 0
-        return 0
-    return res
 
 
 def cmd_scan(args, cache: Cache) -> int:
@@ -117,24 +101,17 @@ def cmd_clean(args, cache: Cache) -> int:
     opts = DetectOptions(exact=True, similar_images=args.similar, scan=_scan_opts(args), image_threshold=args.threshold)
     res = run_detection(args.paths, opts, cache, progress=_progress)
     _end_progress()
-    resolution = _resolution(cache)
-    reqs: dict[str, q.QuarantineRequest] = {}
-    kept: set[str] = set()
-    for g in res.groups:
-        keeper, rest = auto_select(g, args.rule, args.prefer or [], resolution)
-        kept.add(os.path.realpath(keeper.path))
-        for f in rest:
-            if os.path.realpath(f.path) in kept:
-                continue
-            reqs.setdefault(f.path, q.QuarantineRequest(f.path, [keeper.path], f"{g.kind}", verify_identical=(g.kind == "exact")))
-    total = sum(os.path.getsize(p) for p in reqs if os.path.exists(p))
+    resolution = resolution_lookup(cache) if args.rule == "highest_resolution" else None
+    marks = auto_select_all(res.groups, args.rule, args.prefer or [], resolution)
+    reqs, _skipped = build_requests(res.groups, marks)
+    total = sum(os.path.getsize(r.path) for r in reqs if os.path.exists(r.path))
     print(f"{len(reqs)} bestanden komen in aanmerking voor quarantaine ({human_size(total)}).")
     if not args.apply:
-        for p in list(reqs)[:20]:
-            print("  ", p)
+        for r in reqs[:20]:
+            print("  ", r.path)
         print("Dry-run: voeg --apply toe om uit te voeren.")
         return 0
-    r = q.move_to_quarantine([x for x in reqs.values() if os.path.realpath(x.keepers[0]) not in {os.path.realpath(k) for k in reqs}], cache)
+    r = q.move_to_quarantine(reqs, cache)
     print(f"{len(r.moved)} bestanden naar quarantaine ({human_size(r.bytes_moved)}); batch {', '.join(r.batch_ids)}")
     for p, why in r.failed:
         print(f"  mislukt: {p}: {why}", file=sys.stderr)

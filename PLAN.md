@@ -236,3 +236,13 @@ Mijlpalen 1–6 geven al een volledig bruikbare fototool; 7–8 zijn uitbreiding
 Besloten: alleen macOS (Apple Silicon, nieuwste versie) · foto's uit losse mappen op de hdd's, Apple Foto's wordt niet doorzocht · meerdere bestandssystemen ondersteund · voornamelijk foto's met voorbeeld in de app · schijven van ca. 1 TB · quarantaine altijd handmatig wissen.
 
 Er zijn geen blokkerende vragen meer; de bouw kan starten bij mijlpaal 1.
+
+## 12. Status (gebouwd)
+
+Alle mijlpalen 1–9 zijn geïmplementeerd; zie `README.md` voor gebruik. Afwijkingen en aanvullingen t.o.v. dit plan:
+
+* **Sneltoets ⌫** markeert een bestand en gaat naar het volgende; het verplaatsen zelf gebeurt via de knop *Naar quarantaine…* met bevestiging (veiliger dan direct verplaatsen).
+* **Quarantaine op macOS:** is het mountpoint niet beschrijfbaar (de systeemschijf `/`), dan wordt de thuismap gebruikt als die op dezelfde schijf staat.
+* **Overlappende groepen** (exacte kopie zit ook in een "gelijkende foto's"-groep) worden bij automatisch selecteren consistent afgehandeld; een keeper wordt nooit gemarkeerd.
+* **Standaard foto-drempel** is 5 van 64 bits (streng); een schuifregelaar (0–12) maakt het ruimer.
+* **Niet op een echte Mac getest:** `diskutil`-herkenning, de `.app`-build (`packaging/build_macos.sh`), Full Disk Access en NTFS/exFAT-gedrag. Kern, CLI en UI zijn op Linux getest (46 tests).
