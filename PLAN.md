@@ -6,9 +6,10 @@ Desktop-app (Python + Qt) om één of meer schijven te scannen, dubbele bestande
 
 | Onderwerp | Keuze |
 |---|---|
-| Platform | Desktop-app, Python 3.11+ met **PySide6 (Qt)**. Windows/macOS/Linux. |
+| Platform | **Alleen macOS** (Apple Silicon + Intel). Desktop-app, Python 3.11+ met **PySide6 (Qt)**, verpakt als `.app`. |
+| Gebruik | Voornamelijk **foto's**; schijven van ca. **1 TB per stuk** → foto-voorbeeld in de app en efficiënt scannen hebben prioriteit |
 | Detectie | Exact (hash), gelijkende foto's, naam + grootte, gelijkende audio/video |
-| Verwijderen | **Verplaatsen naar quarantainemap**, pas later definitief wissen |
+| Verwijderen | **Verplaatsen naar quarantainemap**; definitief wissen gebeurt **altijd handmatig** (nooit automatisch) |
 | Ordenen | Op datum (jaar/maand) + eigen regels, **altijd eerst voorbeeldweergave** |
 | Map-vergelijk | **Twee mappen (A en B) vergelijken**: duplicaten tussen A en B + alleen-in-A / alleen-in-B; dubbelen in B naar quarantaine |
 
@@ -77,6 +78,30 @@ Genormaliseerde naam (zonder " (1)", "- kopie", hoofdletters) + gelijke grootte.
 ### 3.5 Cache
 SQLite-tabel met sleutel `(schijf_id, relatief pad, grootte, mtime)` → hashes. Een tweede scan van een grote schijf is hierdoor veel sneller en onderbroken scans kunnen hervat worden.
 
+## 3b. Foto-focus en macOS-specifiek
+
+**Foto's (hoofdgebruik)**
+- Ondersteunde formaten: JPEG, PNG, HEIC/HEIF, TIFF en RAW (CR2/CR3, NEF, ARW, DNG e.a.) via `pillow-heif` en `rawpy`/ingebedde preview.
+- **Voorbeeld in de app:** thumbnails (gecachet op schijf, gegenereerd met Pillow/Quick Look-achtige downscaling), grote preview met zoom/pan, naast-elkaar-vergelijking met gesynchroniseerde zoom, EXIF-paneel (camera, resolutie, datum, GPS) en verschil-overlay. Met sneltoetsen (←/→, spatie = markeren, ⌫ = naar quarantaine).
+- **Slimme standaardkeuze bij gelijkende foto's:** hoogste resolutie → grootste bestand → oudste opnamedatum; altijd te overrulen.
+- **Bijbehorende bestanden:** RAW+JPEG-paren, HEIC + Live Photo `.MOV`, en `.xmp`/`.aae`-sidecars blijven bij elkaar (samen verplaatst naar quarantaine of doelmap).
+- Foto's vergelijken kan op exacte inhoud én op gelijkenis (pHash), zodat dezelfde foto in andere resolutie/compressie ook gevonden wordt.
+
+**macOS**
+- **Volledige schijftoegang** (Full Disk Access) en toegang tot externe volumes worden bij eerste start uitgelegd en gecontroleerd.
+- Schijf-identificatie via volume-UUID (`diskutil info`), zodat een externe hdd na herverbinden dezelfde cache houdt.
+- Bestandssystemen: APFS, HFS+, exFAT werken volledig; **NTFS is op macOS standaard read-only** → scannen en vergelijken werkt, maar quarantaine/ordenen wordt dan uitgeschakeld met uitleg.
+- Standaard uitsluiten: `.DS_Store`, `._*` (AppleDouble), `.Spotlight-V100`, `.fseventsd`, `.Trashes`, `.TemporaryItems` en de **inhoud van `*.photoslibrary`-pakketten** (met waarschuwing; dat is geen veilig te bewerken structuur).
+- APFS-kloonbestanden (`cp -c`) worden herkend als hetzelfde fysieke blok waar mogelijk; hardlinks via inode.
+- Verpakken als ondertekende `.app` (PyInstaller of py2app), dmg; notarisatie als optioneel eindstap.
+
+**Schaal: ca. 1 TB per schijf**
+- Aanname: 100.000–400.000 foto's per schijf. Volledige hash van elk bestand zou op een hdd uren kosten, daarom: filtercascade (3.1), sequentieel lezen per schijf, gedeeltelijke hash eerst.
+- Hdd-lezen bij 100–150 MB/s: ruim 1 TB ≈ 2–3 uur voor een eerste volledige scan; de cache (SQLite, `WAL`-modus) maakt herhaalde scans en hervatten snel.
+- Perceptuele hashes alleen berekenen voor beeldbestanden en parallel over CPU-kernen; thumbnails pas on-demand of op de achtergrond.
+- Geheugen constant door streaming; resultaten worden uit SQLite geladen (gevirtualiseerde lijst in de UI, niet alles tegelijk in RAM).
+- Voortgang toont geschatte resttijd, en een scan kan veilig worden gepauzeerd/afgebroken.
+
 ## 4. Meerdere schijven vergelijken
 - Gebruiker voegt **bronnen** toe (mappen/schijven) en kan per bron een rol geven: *"behouden"* (referentie) of *"opruimen"*.
 - Schijven worden herkend op **UUID/volumeserienummer**, niet op stationsletter, zodat de cache blijft kloppen als een externe hdd een andere letter krijgt.
@@ -119,10 +144,10 @@ Tabs/vensters:
 Handmatig of via regels: behoud oudste / nieuwste, kortste pad, voorkeursschijf, voorkeursmap, hoogste resolutie. Regels zijn combineerbaar en altijd zichtbaar vóór uitvoeren.
 
 ### 6.2 Quarantaine
-- Verplaatsen naar `.dupescout-quarantine/<datum>/` **op dezelfde schijf** (instant rename, werkt ook zonder prullenbak op externe hdd's).
+- Verplaatsen naar `.dupescout-quarantine/<datum>/` **op dezelfde schijf** (niet de macOS-prullenbak, die per volume `.Trashes` gebruikt en zich anders gedraagt op externe schijven) (instant rename, werkt ook zonder prullenbak op externe hdd's).
 - Per batch een `manifest.json`: oorspronkelijk pad, hash, grootte, tijdstip, reden, behouden kopie.
 - **Herstellen** per bestand of batch.
-- **Opruimen**: handmatig of automatisch na N dagen; pas dán definitief gewist.
+- **Opruimen: uitsluitend handmatig.** Er is geen timer of automatische verwijdering. In het quarantaine-tabblad zie je per batch en per schijf hoeveel ruimte het inneemt; definitief wissen vraagt per batch een expliciete bevestiging (met aantal bestanden en GB).
 
 ### 6.3 Vangrails
 - Nooit alle kopieën in een groep tegelijk verwijderen (minimaal 1 blijft altijd staan, afgedwongen in `core`, niet alleen in de UI).
@@ -169,17 +194,17 @@ Voorwaarden: extensie/MIME, naam (regex), grootte, datum, bronmap, schijf. Eerst
 
 | # | Mijlpaal | Resultaat |
 |---|---|---|
-| 1 | Skelet + scanner + cache + exacte detectie | Werkende CLI die dubbelen rapporteert |
-| 2 | Qt-UI: bronnen, resultaten, voortgang | Dubbelen bekijken in de app |
-| 3 | Vergelijkpaneel + selectieregels | Foto/tekst naast elkaar, slimme selectie |
-| 4 | Quarantaine + herstel + logboek | Veilig opruimen |
-| 5 | **Twee mappen vergelijken (A↔B)** | Duplicaten / alleen-in-A / alleen-in-B, dubbelen in B naar quarantaine |
-| 6 | Ordenen: regel-engine, voorbeeld, uitvoeren, undo | Datum- en eigen-regel-ordening |
-| 7 | Gelijkende foto's | pHash + drempelregelaar |
-| 8 | Gelijkende audio/video | ffmpeg/chromaprint-integratie |
-| 9 | Afwerking | Instellingen, verpakken (PyInstaller), documentatie |
+| 1 | Skelet + scanner + cache + exacte detectie (macOS, volume-UUID) | Werkende CLI die dubbelen rapporteert op een 1 TB-schijf |
+| 2 | Qt-UI: bronnen, resultaten, voortgang + foto-thumbnails | Dubbelen bekijken in de app |
+| 3 | Fotovoorbeeld: groot voorbeeld, naast elkaar, EXIF, sneltoetsen | Prettig foto's vergelijken |
+| 4 | Quarantaine + herstel + logboek (handmatig wissen) | Veilig opruimen |
+| 5 | Twee mappen vergelijken (A↔B) | Duplicaten / alleen-in-A / alleen-in-B, dubbelen in B naar quarantaine |
+| 6 | Gelijkende foto's (pHash, HEIC/RAW, drempelregelaar, bijbehorende bestanden) | Ook herschaalde/hercomprimeerde kopieën |
+| 7 | Ordenen: regel-engine, voorbeeld, uitvoeren, undo | Datum- en eigen-regel-ordening |
+| 8 | Gelijkende audio/video | ffmpeg/chromaprint (laagste prioriteit gezien foto-gebruik) |
+| 9 | Afwerking | Instellingen, ondertekende `.app`/dmg, documentatie |
 
-Mijlpalen 1–6 geven al een volledig bruikbare tool; 7–8 zijn uitbreidingen.
+Mijlpalen 1–6 geven al een volledig bruikbare fototool; 7–8 zijn uitbreidingen.
 
 ## 9. Teststrategie
 - Unit-tests op `core` met gegenereerde testmappen (identieke, bijna-identieke, hardlinks, lege bestanden, Unicode-/lange paden).
@@ -200,8 +225,11 @@ Mijlpalen 1–6 geven al een volledig bruikbare tool; 7–8 zijn uitbreidingen.
 | Quarantaine vult de schijf | Zelfde schijf = geen extra ruimte bij verplaatsen; overzicht + auto-opruimen |
 | ffmpeg ontbreekt | Optionele detectie, duidelijke melding, rest blijft werken |
 
-## 11. Openstaande punten (graag jouw keuze)
-1. Welk besturingssysteem gebruik je (Windows/macOS/Linux)? Bepaalt hoe we de installer verpakken.
-2. Welk type bestanden is de hoofdmoot (foto's, video, documenten)? Dan prioriteren we die detectie eerst.
-3. Ongeveer hoe groot zijn de schijven (aantal TB / bestanden)? Bepaalt hoe agressief we moeten optimaliseren.
-4. Automatisch quarantaine opruimen na een aantal dagen, of altijd handmatig?
+## 11. Beslissingen en wat er nog openstaat
+
+Besloten: alleen macOS · voornamelijk foto's met voorbeeld in de app · schijven van ca. 1 TB · quarantaine altijd handmatig wissen.
+
+Nog open (niet blokkerend voor mijlpaal 1):
+1. Gebruik je Apple Silicon of Intel, en welke macOS-versie? (bepaalt de build)
+2. Staan de foto's ook in de Apple Foto's-bibliotheek, of alleen als losse mappen op de hdd's? (Foto's-bibliotheek wordt standaard niet aangeraakt)
+3. Welk bestandssysteem hebben de hdd's (APFS, HFS+, exFAT, NTFS)?
