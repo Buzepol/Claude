@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dupescout"
+version = "0.1.0"
+description = "Vergelijk schijven en mappen, vind dubbele bestanden en foto's, ruim veilig op en orden in nieuwe mappen (macOS)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "Pillow>=10.0",
+  "pillow-heif>=0.16",
+  "numpy>=1.26",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6-Essentials>=6.6"]
+raw = ["rawpy>=0.19"]
+dev = ["pytest>=8.0", "PySide6-Essentials>=6.6"]
+
+[project.scripts]
+dupescout = "dupescout.cli:main"
+dupescout-gui = "dupescout.ui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["dupescout*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
