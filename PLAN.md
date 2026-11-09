@@ -6,7 +6,7 @@ Desktop-app (Python + Qt) om één of meer schijven te scannen, dubbele bestande
 
 | Onderwerp | Keuze |
 |---|---|
-| Platform | **Alleen macOS** (Apple Silicon + Intel). Desktop-app, Python 3.11+ met **PySide6 (Qt)**, verpakt als `.app`. |
+| Platform | **Alleen macOS, Apple Silicon (arm64) en nieuwste macOS**. Desktop-app, Python 3.11+ met **PySide6 (Qt)**, verpakt als `.app` (arm64). |
 | Gebruik | Voornamelijk **foto's**; schijven van ca. **1 TB per stuk** → foto-voorbeeld in de app en efficiënt scannen hebben prioriteit |
 | Detectie | Exact (hash), gelijkende foto's, naam + grootte, gelijkende audio/video |
 | Verwijderen | **Verplaatsen naar quarantainemap**; definitief wissen gebeurt **altijd handmatig** (nooit automatisch) |
@@ -90,8 +90,14 @@ SQLite-tabel met sleutel `(schijf_id, relatief pad, grootte, mtime)` → hashes.
 **macOS**
 - **Volledige schijftoegang** (Full Disk Access) en toegang tot externe volumes worden bij eerste start uitgelegd en gecontroleerd.
 - Schijf-identificatie via volume-UUID (`diskutil info`), zodat een externe hdd na herverbinden dezelfde cache houdt.
-- Bestandssystemen: APFS, HFS+, exFAT werken volledig; **NTFS is op macOS standaard read-only** → scannen en vergelijken werkt, maar quarantaine/ordenen wordt dan uitgeschakeld met uitleg.
-- Standaard uitsluiten: `.DS_Store`, `._*` (AppleDouble), `.Spotlight-V100`, `.fseventsd`, `.Trashes`, `.TemporaryItems` en de **inhoud van `*.photoslibrary`-pakketten** (met waarschuwing; dat is geen veilig te bewerken structuur).
+- **Meerdere bestandssystemen tegelijk** (APFS, HFS+, exFAT, FAT32 en NTFS). Per volume detecteert de app bij het toevoegen: bestandssysteem, schrijfbaarheid, hoofdlettergevoeligheid, maximale bestandsnaamlengte en tijdstempel-precisie, en past gedrag daarop aan:
+  - APFS/HFS+/exFAT/FAT32: volledig (scannen, quarantaine, ordenen).
+  - **NTFS is op macOS standaard read-only** (tenzij een extra driver is geïnstalleerd) → scannen en vergelijken werkt, maar quarantaine/ordenen wordt dan voor dat volume uitgeschakeld met uitleg.
+  - Tussen verschillende bestandssystemen vergelijken we op inhoud, nooit op tijdstempel of inode (exFAT/FAT32 hebben grovere tijdstempels; bestandsnamen kunnen verschillen in Unicode-normalisatie, dat wordt genormaliseerd).
+  - Verplaatsen over bestandssystemen = kopiëren + hash-verificatie + pas dan de bron naar quarantaine.
+  - Tekens die op een doelsysteem niet mogen (bijv. `:` op exFAT/NTFS) worden bij ordenen gemeld in het voorbeeld.
+- **Apple Foto's wordt nooit doorzocht:** `*.photoslibrary`-pakketten worden altijd overgeslagen (geen instelling om dat aan te zetten).
+- Standaard uitsluiten: `.DS_Store`, `._*` (AppleDouble), `.Spotlight-V100`, `.fseventsd`, `.Trashes`, `.TemporaryItems`.
 - APFS-kloonbestanden (`cp -c`) worden herkend als hetzelfde fysieke blok waar mogelijk; hardlinks via inode.
 - Verpakken als ondertekende `.app` (PyInstaller of py2app), dmg; notarisatie als optioneel eindstap.
 
@@ -227,9 +233,6 @@ Mijlpalen 1–6 geven al een volledig bruikbare fototool; 7–8 zijn uitbreiding
 
 ## 11. Beslissingen en wat er nog openstaat
 
-Besloten: alleen macOS · voornamelijk foto's met voorbeeld in de app · schijven van ca. 1 TB · quarantaine altijd handmatig wissen.
+Besloten: alleen macOS (Apple Silicon, nieuwste versie) · foto's uit losse mappen op de hdd's, Apple Foto's wordt niet doorzocht · meerdere bestandssystemen ondersteund · voornamelijk foto's met voorbeeld in de app · schijven van ca. 1 TB · quarantaine altijd handmatig wissen.
 
-Nog open (niet blokkerend voor mijlpaal 1):
-1. Gebruik je Apple Silicon of Intel, en welke macOS-versie? (bepaalt de build)
-2. Staan de foto's ook in de Apple Foto's-bibliotheek, of alleen als losse mappen op de hdd's? (Foto's-bibliotheek wordt standaard niet aangeraakt)
-3. Welk bestandssysteem hebben de hdd's (APFS, HFS+, exFAT, NTFS)?
+Er zijn geen blokkerende vragen meer; de bouw kan starten bij mijlpaal 1.
