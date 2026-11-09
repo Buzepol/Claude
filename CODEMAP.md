@@ -5,8 +5,9 @@ Overzicht van waar alles staat en hoe het samenhangt (±5.500 regels, Python 3.1
 ## Lokaal op je Mac
 
 ```bash
-git clone -b claude/hopeful-cori-2otgo8 https://github.com/Buzepol/Claude.git ~/Developer/DupeScout
-cd ~/Developer/DupeScout          # <- dit is de codemap (projectmap)
+mkdir -p ~/claude/Code
+git clone -b claude/hopeful-cori-2otgo8 https://github.com/Buzepol/Claude.git ~/claude/Code/filemanager
+cd ~/claude/Code/filemanager          # <- dit is de codemap (projectmap)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,raw]"
 pytest                            # 46 tests
@@ -14,7 +15,7 @@ dupescout-gui                     # app starten
 ./packaging/build_macos.sh        # DupeScout.app + dmg in dist/
 ```
 
-Claude Code lokaal gebruiken: `cd ~/Developer/DupeScout && claude` (leest `CLAUDE.md`). Daar kan het wél
+Claude Code lokaal gebruiken: `cd ~/claude/Code/filemanager && claude` (leest `CLAUDE.md`). Daar kan het wél
 tegen je echte hdd's testen, de `.app` bouwen en macOS-specifieke dingen (`diskutil`, rechten) controleren.
 
 ## Lagen

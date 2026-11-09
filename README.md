@@ -9,6 +9,8 @@ Het plan en de afwegingen staan in [`PLAN.md`](PLAN.md).
 ## Installeren
 
 ```bash
+mkdir -p ~/claude/Code && git clone -b claude/hopeful-cori-2otgo8 https://github.com/Buzepol/Claude.git ~/claude/Code/filemanager
+cd ~/claude/Code/filemanager
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[gui]"        # app + commandoregel
 pip install -e ".[gui,raw]"    # + RAW-foto's (rawpy)
