@@ -3,13 +3,17 @@
 Zie `CODEMAP.md` voor waar alles staat en `README.md` voor gebruik. Taal van UI en documentatie: Nederlands.
 
 ## Commando's
+Projectmap: `~/Library/Mobile Documents/com~apple~CloudDocs/PROJECTEN/Claude/Code/filemanager` (iCloud Drive).
+De virtuele omgeving staat in `.venv.nosync` (met link `.venv`) zodat iCloud hem niet synchroniseert.
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv.nosync && ln -s .venv.nosync .venv
+source .venv/bin/activate
 pip install -e ".[dev,raw]"
-pytest -q                          # alle tests (UI draait headless)
-dupescout-gui                      # app starten
-./packaging/build_macos.sh         # .app/.dmg bouwen (Apple Silicon)
+pytest -q
+dupescout-gui
+./packaging/build_macos.sh
 ```
+Alle tests draaien headless; `build_macos.sh` bouwt de .app/.dmg (Apple Silicon).
 
 ## Regels
 * Houd `dupescout/core` vrij van UI-imports.

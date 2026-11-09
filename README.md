@@ -8,13 +8,16 @@ Het plan en de afwegingen staan in [`PLAN.md`](PLAN.md).
 
 ## Installeren
 
+Projectmap: `~/Library/Mobile Documents/com~apple~CloudDocs/PROJECTEN/Claude/Code/filemanager`
+(zie `CODEMAP.md` voor de volledige stappen, ook voor ophalen met git).
+
 ```bash
-mkdir -p ~/claude/Code && git clone -b claude/hopeful-cori-2otgo8 https://github.com/Buzepol/Claude.git ~/claude/Code/filemanager
-cd ~/claude/Code/filemanager
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[gui]"        # app + commandoregel
-pip install -e ".[gui,raw]"    # + RAW-foto's (rawpy)
+cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/PROJECTEN/Claude/Code/filemanager"
+python3 -m venv .venv.nosync && ln -s .venv.nosync .venv
+source .venv/bin/activate
+pip install -e ".[gui]"
 ```
+Met RAW-foto's (rawpy): `pip install -e ".[gui,raw]"`.
 
 Optioneel (voor video/audio): `brew install ffmpeg chromaprint` (levert `ffmpeg`, `ffprobe`, `fpcalc`).
 

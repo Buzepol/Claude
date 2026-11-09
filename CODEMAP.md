@@ -4,19 +4,33 @@ Overzicht van waar alles staat en hoe het samenhangt (±5.500 regels, Python 3.1
 
 ## Lokaal op je Mac
 
+De projectmap (de "codemap-map" met `dupescout/`, `tests/` en dit bestand) staat in iCloud Drive:
+
+`~/Library/Mobile Documents/com~apple~CloudDocs/PROJECTEN/Claude/Code/filemanager`
+
+Kopieer onderstaande commando's zonder `#`-commentaar (zsh in Terminal kan daar niet tegen).
+
+Eerste keer ophalen (alleen als de map nog niet bestaat):
 ```bash
-mkdir -p ~/claude/Code
-git clone -b claude/hopeful-cori-2otgo8 https://github.com/Buzepol/Claude.git ~/claude/Code/filemanager
-cd ~/claude/Code/filemanager          # <- dit is de codemap (projectmap)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,raw]"
-pytest                            # 46 tests
-dupescout-gui                     # app starten
-./packaging/build_macos.sh        # DupeScout.app + dmg in dist/
+mkdir -p "$HOME/Library/Mobile Documents/com~apple~CloudDocs/PROJECTEN/Claude/Code"
+git clone https://github.com/Buzepol/Claude.git "$HOME/Library/Mobile Documents/com~apple~CloudDocs/PROJECTEN/Claude/Code/filemanager"
 ```
 
-Claude Code lokaal gebruiken: `cd ~/claude/Code/filemanager && claude` (leest `CLAUDE.md`). Daar kan het wél
-tegen je echte hdd's testen, de `.app` bouwen en macOS-specifieke dingen (`diskutil`, rechten) controleren.
+Installeren, testen en starten:
+```bash
+cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/PROJECTEN/Claude/Code/filemanager"
+python3 -m venv .venv.nosync && ln -s .venv.nosync .venv
+source .venv/bin/activate
+pip install -e ".[dev,raw]"
+pytest -q
+dupescout-gui
+```
+
+* `.venv.nosync`: iCloud slaat mappen met de naam `.nosync` over, zodat de virtuele omgeving niet wordt gesynchroniseerd (traag en breekbaar). De link `.venv` zorgt dat alle commando's gewoon werken.
+* Zet in Finder (rechtermuisknop op de map) "Nu downloaden" aan, zodat iCloud "Mac-opslag optimaliseren" geen projectbestanden uit je Mac haalt. Voor een git-project is een map buiten iCloud (bv. `~/Developer/filemanager`) robuuster; GitHub is dan je back-up.
+* Opnieuw bouwen na verplaatsen van de map: `.venv` verwijderen en de installatie hierboven herhalen.
+* `.app`/`.dmg` bouwen: `./packaging/build_macos.sh` (in de projectmap).
+* Claude Code lokaal: `cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/PROJECTEN/Claude/Code/filemanager"` en dan `claude` (leest `CLAUDE.md`). Daar kan het wél tegen je echte hdd's testen en macOS-specifieke dingen (`diskutil`, rechten) controleren.
 
 ## Lagen
 
